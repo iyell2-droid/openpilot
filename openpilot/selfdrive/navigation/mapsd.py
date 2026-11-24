@@ -67,7 +67,8 @@ def main():
       # Navigation without usable position/instruction immediately publishes black.
       if now >= demand_checked:
         demand = (params.get_bool('UsbGpuActive') or jetlink_map_demand(now=now) or
-                  params.get_int('ClusterHudScreenMode') == 7 or preview_fresh(WEB_DEMAND_PATH))
+                  params.get_int('ClusterHudScreenMode') == 7 or params.get_int('ShowNavMap') > 0 or
+                  preview_fresh(WEB_DEMAND_PATH))
         token = os.environ.get('MAPBOX_TOKEN') or params.get('MapboxPublicKey') or ''
         if isinstance(token, bytes):
           token = token.decode('utf-8')

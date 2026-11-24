@@ -10,6 +10,7 @@ from openpilot.selfdrive.ui.onroad.alert_renderer import AlertRenderer
 from openpilot.selfdrive.ui.onroad.driver_preview import DriverPreview
 from openpilot.selfdrive.ui.onroad.hud_renderer import HudRenderer
 from openpilot.selfdrive.ui.onroad.model_renderer import ModelRenderer
+from openpilot.selfdrive.ui.onroad.nav_map_overlay import NavMapOverlay
 from openpilot.selfdrive.ui.render_diagnostics import RenderDiagnostics
 from openpilot.selfdrive.ui.overlay_state import OverlayState
 from openpilot.selfdrive.ui.onroad.cameraview import CameraView
@@ -63,6 +64,7 @@ class AugmentedRoadView(CameraView):
     # uiDebug.plotMode용 ShowPlotMode 캐시 — 파일 읽기라 매 프레임 금지, ~2초 스로틀
     self._plot_mode = 0
     self._plot_mode_next_t = 0.0
+    self._nav_map = NavMapOverlay(ui_state.params)
     self._border_params = TimedSnapshotCache(
       BorderParamSnapshot(),
       lambda: read_border_params(ui_state.params, ui_state.params_memory),
@@ -134,6 +136,8 @@ class AugmentedRoadView(CameraView):
     _t = time.monotonic()
     timing.call('hud', self._hud_renderer.render, self._content_rect)  # includes plot when enabled
     hud_ms = (time.monotonic() - _t) * 1000.0
+    # Carrot: navigation map panel (ShowNavMap); alerts stay drawn above it
+    timing.call('nav_map', self._nav_map.render, self._content_rect)
     _t = time.monotonic()
     timing.call('alert', self.alert_renderer.render, self._content_rect)
     alert_ms = (time.monotonic() - _t) * 1000.0
@@ -173,6 +177,7 @@ class AugmentedRoadView(CameraView):
       self._click_callback()
 
   def close(self):
+    self._nav_map.close()
     self.model_renderer._overlay.close()
     self._hud_renderer._overlay.close()
     if preview := getattr(self, 'driver_state_renderer', None):
