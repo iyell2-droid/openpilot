@@ -10,7 +10,7 @@ from openpilot.selfdrive.ui.onroad.alert_renderer import AlertRenderer
 from openpilot.selfdrive.ui.onroad.driver_preview import DriverPreview
 from openpilot.selfdrive.ui.onroad.hud_renderer import HudRenderer
 from openpilot.selfdrive.ui.onroad.model_renderer import ModelRenderer
-from openpilot.selfdrive.ui.onroad.nav_map_overlay import NavMapOverlay
+from openpilot.selfdrive.ui.onroad.nav_map_overlay import LAYER_OVER_HUD, LAYER_UNDER_HUD, NavMapOverlay
 from openpilot.selfdrive.ui.render_diagnostics import RenderDiagnostics
 from openpilot.selfdrive.ui.overlay_state import OverlayState
 from openpilot.selfdrive.ui.onroad.cameraview import CameraView
@@ -133,11 +133,13 @@ class AugmentedRoadView(CameraView):
       _t = time.monotonic()
       timing.call('model', self.model_renderer.render, self._content_rect)
       model_ms = (time.monotonic() - _t) * 1000.0
+    # Carrot: tall/full-screen navigation map goes under the HUD (turn info and speed stay visible)
+    timing.call('nav_map', self._nav_map.render, self._content_rect, LAYER_UNDER_HUD)
     _t = time.monotonic()
     timing.call('hud', self._hud_renderer.render, self._content_rect)  # includes plot when enabled
     hud_ms = (time.monotonic() - _t) * 1000.0
-    # Carrot: navigation map panel (ShowNavMap); alerts stay drawn above it
-    timing.call('nav_map', self._nav_map.render, self._content_rect)
+    # Carrot: small/large map panel (ShowNavMap); alerts stay drawn above it
+    timing.call('nav_map', self._nav_map.render, self._content_rect, LAYER_OVER_HUD)
     _t = time.monotonic()
     timing.call('alert', self.alert_renderer.render, self._content_rect)
     alert_ms = (time.monotonic() - _t) * 1000.0
@@ -172,9 +174,21 @@ class AugmentedRoadView(CameraView):
     self._pm.send('uiDebug', msg)
     timing.finish()
 
-  def _handle_mouse_press(self, _):
-    if not self._hud_renderer.user_interacting() and self._click_callback is not None:
+  def _handle_mouse_press(self, pos):
+    if self._hud_renderer.user_interacting():
+      return
+    # The map panel owns touches on it (double-tap: full screen, drag: resize),
+    # except on the HUD's experimental-mode button.
+    if not rl.check_collision_point_rec(pos, self._hud_renderer.exp_button_rect) and self._nav_map.handle_press(pos):
+      return
+    if self._click_callback is not None:
       self._click_callback()
+
+  def _handle_mouse_event(self, mouse_event):
+    if mouse_event.left_released:
+      self._nav_map.handle_release(mouse_event.pos)
+    elif mouse_event.left_down:
+      self._nav_map.handle_move(mouse_event.pos)
 
   def close(self):
     self._nav_map.close()

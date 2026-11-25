@@ -556,7 +556,8 @@
             "ShowRadarInfo",
             "ShowRouteInfo",
             "ShowPlotMode",
-            "ShowNavMap"
+            "ShowNavMap",
+            "ShowNavMapWidth"
           ]
         },
         {
@@ -2760,18 +2761,34 @@
       "group": "화면",
       "name": "ShowNavMap",
       "title": "주행화면 Nav 지도(0)",
-      "descr": "0: 끄기, 1: 작게(오른쪽 아래), 2: 크게(오른쪽)\n당근내비(CarrotNavi) 연결 시 티맵 화면을, 없으면 GPS 기준 도로 지도를 표시합니다. 표시 전용이며 주행에는 영향이 없습니다.",
+      "descr": "0: 끄기, 1: 작게(오른쪽 아래), 2: 크게(오른쪽), 3: 세로 전체(오른쪽)\n당근내비(CarrotNavi) 연결 시 티맵 화면을, 없으면 GPS 기준 도로 지도를 표시합니다. 지도를 두 번 탭하면 전체 화면, 좌우로 끌면 크기 조절. 표시 전용이며 주행에는 영향이 없습니다.",
       "egroup": "DISP",
       "etitle": "Onroad Nav Map(0)",
-      "edescr": "0: Off, 1: Small (bottom-right), 2: Large (right)\nShows the CarrotNavi (TMAP) map video when connected, otherwise a GPS road map. Display only; does not affect driving.",
+      "edescr": "0: Off, 1: Small (bottom-right), 2: Large (right), 3: Tall (right, full height)\nShows the CarrotNavi (TMAP) map video when connected, otherwise a GPS road map. Double-tap the map for full screen; drag it sideways to resize. Display only; does not affect driving.",
       "cgroup": "显示设置",
       "ctitle": "行驶画面导航地图(0)",
-      "cdescr": "0: 关, 1: 小(右下), 2: 大(右侧)\n连接 CarrotNavi 时显示 TMAP 地图画面，否则显示 GPS 道路地图。仅用于显示，不影响驾驶。",
+      "cdescr": "0: 关, 1: 小(右下), 2: 大(右侧), 3: 竖向全高(右侧)\n连接 CarrotNavi 时显示 TMAP 地图画面，否则显示 GPS 道路地图。双击地图全屏，左右拖动调整大小。仅用于显示，不影响驾驶。",
       "min": 0,
-      "max": 2,
+      "max": 3,
       "default": 0,
       "unit": 1,
       "control": "select"
+    },
+    {
+      "group": "화면",
+      "name": "ShowNavMapWidth",
+      "title": "주행화면 Nav 지도 폭(0)",
+      "descr": "지도 폭(화면 폭의 %). 0: 모드 기본 크기. 주행 화면에서 지도를 좌우로 끌면 자동 저장됩니다.",
+      "egroup": "DISP",
+      "etitle": "Onroad Nav Map Width(0)",
+      "edescr": "Map width (% of screen width). 0: default for the mode. Saved automatically when you drag the map sideways on the driving screen.",
+      "cgroup": "显示设置",
+      "ctitle": "行驶画面导航地图宽度(0)",
+      "cdescr": "地图宽度(屏幕宽度的%)。0: 模式默认大小。在行驶画面左右拖动地图会自动保存。",
+      "min": 0,
+      "max": 70,
+      "default": 0,
+      "unit": 5
     },
     {
       "group": "레인모드",

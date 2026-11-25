@@ -326,6 +326,10 @@ class HudRenderer(Widget):
   def user_interacting(self) -> bool:
     return self._exp_button.is_pressed
 
+  @property
+  def exp_button_rect(self) -> rl.Rectangle:
+    return self._exp_button.rect
+
   def _draw_egpu_badge(self, rect: rl.Rectangle) -> None:
     # Keep runtime state visible while the shared USB hub re-enumerates; a
     # transient missing sysfs sample must not hide loading or failure details.

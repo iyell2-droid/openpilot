@@ -4,20 +4,25 @@
 carrot_navi already publishes the app's MAP MAIN H.264 stream on the
 carrotNaviMedia service (Carrot Web and the cluster HUD consume it too).
 This process only runs work while ShowNavMap > 0: it decodes the stream in
-software on the little cores and writes a downscaled PNG to /dev/shm at a
-bounded rate. The UI just loads that image, so decoding never runs in the
-UI render thread. Nothing here feeds driving or the model.
+software on the little cores and writes the newest picture to /dev/shm as raw
+RGB24 at native resolution, at a bounded rate. The UI only uploads those bytes
+to a texture (no image decoding in the render thread) and crops them for the
+panel shape. Nothing here feeds driving or the model.
+
+File format: 8-byte header (uint16 width, uint16 height, 4 reserved bytes,
+little endian) followed by width*height*3 bytes of RGB.
 """
 import os
+import struct
 import time
 from pathlib import Path
 from typing import Any
 
-TMAP_PREVIEW_PATH = Path('/dev/shm/carrot_tmap_map.png')
+TMAP_PREVIEW_PATH = Path('/dev/shm/carrot_tmap_map.rgb')
 TMAP_PREVIEW_MAX_AGE = 1.5
 MAP_KEY = ('render', 'map_main')
-OUTPUT_WIDTH = 640
-OUTPUT_HEIGHT = 360
+RAW_HEADER = struct.Struct('<HHI')
+MAX_DIMENSION = 1920
 WRITE_INTERVAL = 0.2  # at most 5 Hz to /dev/shm
 PARAM_INTERVAL = 1.0
 H264_FLAG_KEYFRAME = 1
@@ -29,6 +34,21 @@ def tmap_preview_fresh(path: Path = TMAP_PREVIEW_PATH, max_age: float = TMAP_PRE
     return 0 <= time.time() - path.stat().st_mtime < max_age  # noqa: TID251 - filesystem mtime is wall clock
   except OSError:
     return False
+
+
+def read_tmap_preview(path: Path = TMAP_PREVIEW_PATH) -> tuple[int, int, bytes] | None:
+  """Returns (width, height, rgb bytes) or None if missing/invalid."""
+  try:
+    data = path.read_bytes()
+  except OSError:
+    return None
+  if len(data) < RAW_HEADER.size:
+    return None
+  width, height, _ = RAW_HEADER.unpack_from(data)
+  pixels = data[RAW_HEADER.size:]
+  if not (0 < width <= MAX_DIMENSION and 0 < height <= MAX_DIMENSION) or len(pixels) != width * height * 3:
+    return None
+  return width, height, pixels
 
 
 def clear_tmap_preview(path: Path = TMAP_PREVIEW_PATH) -> None:
@@ -50,13 +70,11 @@ def _field(data: Any, name: str, default: Any) -> Any:
 class TmapPreview:
   """Decode MAP MAIN access units; write the newest picture at a bounded rate."""
 
-  def __init__(self, path: Path = TMAP_PREVIEW_PATH, write_interval: float = WRITE_INTERVAL,
-               size: tuple[int, int] = (OUTPUT_WIDTH, OUTPUT_HEIGHT)) -> None:
+  def __init__(self, path: Path = TMAP_PREVIEW_PATH, write_interval: float = WRITE_INTERVAL) -> None:
     import av
     self._av = av
     self._path = path
     self._write_interval = write_interval
-    self._size = size
     self._codec = None
     self._config = b''
     self._session = ''
@@ -117,8 +135,9 @@ class TmapPreview:
     # scale/encode the newest picture when the write slot is open.
     if not frames or now < self._next_write:
       return False
-    image = frames[-1].reformat(width=self._size[0], height=self._size[1], format='rgb24').to_image()
-    return self._write(image, now)
+    frame = frames[-1]
+    rgb = frame.to_ndarray(format='rgb24')
+    return self._write(rgb.shape[1], rgb.shape[0], rgb.tobytes(), now)
 
   def _write_still(self, payload: bytes, now: float) -> bool:
     if now < self._next_write or not payload:
@@ -126,15 +145,20 @@ class TmapPreview:
     from io import BytesIO
     from PIL import Image
     try:
-      image = Image.open(BytesIO(payload)).convert('RGB').resize(self._size)
+      image = Image.open(BytesIO(payload)).convert('RGB')
     except Exception:
       self.errors += 1
       return False
-    return self._write(image, now)
+    return self._write(image.width, image.height, image.tobytes(), now)
 
-  def _write(self, image, now: float) -> bool:
+  def _write(self, width: int, height: int, rgb: bytes, now: float) -> bool:
+    if not (0 < width <= MAX_DIMENSION and 0 < height <= MAX_DIMENSION):
+      self.errors += 1
+      return False
     temporary = self._path.with_suffix('.tmp')
-    image.save(temporary, format='PNG', compress_level=1)
+    with open(temporary, 'wb') as f:
+      f.write(RAW_HEADER.pack(width, height, 0))
+      f.write(rgb)
     os.replace(temporary, self._path)
     self._next_write = now + self._write_interval
     self.written += 1
