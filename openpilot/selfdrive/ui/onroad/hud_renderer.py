@@ -944,10 +944,10 @@ class HudRenderer(Widget):
       )
 
   def _draw_fullscreen_speed(self, bx: int, by: int):
-    """Compact cruise set speed + speed limit for the full-screen nav map.
-    Current speed is left out on purpose: the TMAP picture already shows it."""
-    self._draw_round_box(bx - 110, by + 15, 230, 210, rl.Color(0, 0, 0, 150),
-                         line_color=rl.Color(255, 255, 255, 90), roundness=0.14, segments=8, line_thickness=2)
+    """Compact cruise set speed for the full-screen nav map.
+    Current speed and the speed limit are left out on purpose: the TMAP picture shows them."""
+    self._draw_round_box(bx - 85, by + 110, 180, 115, rl.Color(0, 0, 0, 150),
+                         line_color=rl.Color(255, 255, 255, 90), roundness=0.2, segments=8, line_thickness=2)
     # Cruise set speed, same value/format as the normal panel's green number.
     if self._engaged and self.is_cruise_set:
       set_speed = float(self.set_speed)
@@ -956,12 +956,10 @@ class HudRenderer(Widget):
       cruise_text = str(int(round(set_speed)))
     else:
       cruise_text = "--"
-    draw_text_ui_style("SET", bx + 5, by + 55, 28, rl.WHITE, font=self._font_display,
+    draw_text_ui_style("SET", bx + 5, by + 148, 28, rl.WHITE, font=self._font_display,
                        border_width=2.0, shadow_offset=4.0, align="center_bottom")
-    draw_text_ui_style(cruise_text, bx + 5, by + 118, 65, COLORS.CARROT_GREEN, font=self._font_display,
+    draw_text_ui_style(cruise_text, bx + 5, by + 215, 65, COLORS.CARROT_GREEN, font=self._font_display,
                        border_width=1.0, shadow_offset=5.0, align="center_bottom")
-    # Same limit/camera logic and colors as the normal panel, centred below.
-    self._draw_carrot_speed_limit_box(bx - 70, by + 20, self._get_speed_limit_info())
 
   def _draw_carrot_speed_limit_box(self, bx: int, by: int, speed_limit_info: tuple[int, int, int]):
     x_spd_limit, x_sign_type, road_limit_speed = speed_limit_info
