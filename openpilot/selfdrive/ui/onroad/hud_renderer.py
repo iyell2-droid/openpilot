@@ -945,7 +945,7 @@ class HudRenderer(Widget):
 
   def _draw_fullscreen_speed(self, bx: int, by: int):
     """Compact current speed + speed limit for the full-screen nav map."""
-    self._draw_round_box(bx - 110, by - 70, 230, 300, rl.Color(0, 0, 0, 150),
+    self._draw_round_box(bx - 110, by - 90, 230, 315, rl.Color(0, 0, 0, 150),
                          line_color=rl.Color(255, 255, 255, 90), roundness=0.12, segments=8, line_thickness=2)
     cur_speed_int = 123 if self._debug_speed_panel else int(round(self.speed))
     draw_text_ui_style(str(cur_speed_int), bx + 5, by + 50, 120, rl.WHITE, font=self._font_display,
