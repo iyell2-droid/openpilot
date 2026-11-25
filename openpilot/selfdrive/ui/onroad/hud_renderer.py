@@ -286,7 +286,8 @@ class HudRenderer(Widget):
     self._refresh_hud_params(time.monotonic())
     self._plot_renderer.update(self._show_plot_mode)
     state = self._overlay_state
-    key = (state.key if state else None, self._blink_timer <= 8, self._disp_timer < 32, self._show_plot_mode)
+    key = (state.key if state else None, self._blink_timer <= 8, self._disp_timer < 32, self._show_plot_mode,
+           self.hide_main_panel)
     self._overlay.draw(rect, self._paint, key, enabled=state is not None and state.enabled,
                        urgent=state is not None and state.urgent)
 
@@ -322,6 +323,10 @@ class HudRenderer(Widget):
     self._draw_date_time(rect)
     self._draw_tpms(rect)
     self._draw_egpu_badge(rect)
+
+  # Set by the onroad view: the full-screen nav map hides the bottom-left Carrot panel
+  # (speed/limit/traffic light/device state). Turn info, alerts and the button stay.
+  hide_main_panel = False
 
   def user_interacting(self) -> bool:
     return self._exp_button.is_pressed
@@ -1400,14 +1405,15 @@ class HudRenderer(Widget):
     bx = int(rect.x + 140)
     by = int(rect.y + rect.height - 230)
 
-    speed_limit_info = self._get_speed_limit_info()
-    self._draw_carrot_main_background(bx, by, speed_limit_info)
-    self._draw_carrot_traffic_light(bx, by)
-    self._draw_carrot_speed_panel(bx, by)
+    if not self.hide_main_panel:
+      speed_limit_info = self._get_speed_limit_info()
+      self._draw_carrot_main_background(bx, by, speed_limit_info)
+      self._draw_carrot_traffic_light(bx, by)
+      self._draw_carrot_speed_panel(bx, by)
 
-    self._draw_carrot_lower_status(bx, by)
-    self._draw_carrot_speed_limit_box(bx, by, speed_limit_info)
-    self._draw_carrot_device_state(bx, by)
+      self._draw_carrot_lower_status(bx, by)
+      self._draw_carrot_speed_limit_box(bx, by, speed_limit_info)
+      self._draw_carrot_device_state(bx, by)
 
     self._draw_turn_info_hud(rect)
 

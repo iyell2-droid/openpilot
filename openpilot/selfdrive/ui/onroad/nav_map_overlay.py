@@ -76,6 +76,7 @@ class NavMapOverlay:
     self._mtime = 0
     self._texture = None
     self._texture_source = SOURCE_NONE
+    self._showing = False
 
   @property
   def mode(self) -> int:
@@ -84,6 +85,11 @@ class NavMapOverlay:
   @property
   def fullscreen(self) -> bool:
     return self._fullscreen
+
+  @property
+  def fullscreen_showing(self) -> bool:
+    """Full screen with a map actually drawn (not the empty-source camera fallback)."""
+    return self._fullscreen and self._mode != 0 and self._showing
 
   # ----- input -----
   def handle_press(self, pos) -> bool:
@@ -152,6 +158,7 @@ class NavMapOverlay:
         self._width_pct = 0
     if self._mode == 0:
       self._fullscreen = False
+      self._showing = False
       self._panel = rl.Rectangle(0, 0, 0, 0)
       self._unload()
 
@@ -252,6 +259,7 @@ class NavMapOverlay:
       return
     self._refresh_texture(now)
     showing = self._source != SOURCE_NONE and self._texture is not None and self._texture_source == self._source
+    self._showing = showing
     self._content = rect
     panel = self._panel_rect(rect)
     self._panel = panel

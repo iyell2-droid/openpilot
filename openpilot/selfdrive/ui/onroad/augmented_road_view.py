@@ -135,6 +135,7 @@ class AugmentedRoadView(CameraView):
       model_ms = (time.monotonic() - _t) * 1000.0
     # Carrot: tall/full-screen navigation map goes under the HUD (turn info and speed stay visible)
     timing.call('nav_map', self._nav_map.render, self._content_rect, LAYER_UNDER_HUD)
+    self._hud_renderer.hide_main_panel = self._nav_map.fullscreen_showing
     _t = time.monotonic()
     timing.call('hud', self._hud_renderer.render, self._content_rect)  # includes plot when enabled
     hud_ms = (time.monotonic() - _t) * 1000.0
