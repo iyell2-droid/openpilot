@@ -9,6 +9,7 @@ from openpilot.selfdrive.navigation.helpers import ParkedPosition
 from openpilot.selfdrive.navigation.jetlink_demand import jetlink_map_demand
 from openpilot.selfdrive.navigation.pmtiles import PMTiles
 from openpilot.selfdrive.navigation.preview import write_preview, preview_fresh, WEB_DEMAND_PATH
+from openpilot.selfdrive.carrot.tmap_preview import tmap_preview_fresh
 from openpilot.selfdrive.navigation.renderer import SIZE, MapRenderer, Position
 from openpilot.selfdrive.navigation.route import RouteTracker, route_coordinates
 
@@ -67,10 +68,11 @@ def main():
       fresh_tbt = sm.valid['navInstructionCarrot'] and 0 <= now - sm.recv_time['navInstructionCarrot'] < 2.
       # Navigation without usable position/instruction immediately publishes black.
       if now >= demand_checked:
-        show_nav_map = params.get_int('ShowNavMap') > 0
+        # ShowNavMap is display-only: it must not change when the model gets a map.
+        # CarrotNavi (TMAP) video, when present, replaces this road map on screen.
+        show_nav_map = params.get_int('ShowNavMap') > 0 and not tmap_preview_fresh()
         demand = (params.get_bool('UsbGpuActive') or jetlink_map_demand(now=now) or
-                  params.get_int('ClusterHudScreenMode') == 7 or show_nav_map or
-                  preview_fresh(WEB_DEMAND_PATH))
+                  params.get_int('ClusterHudScreenMode') == 7 or preview_fresh(WEB_DEMAND_PATH))
         token = os.environ.get('MAPBOX_TOKEN') or params.get('MapboxPublicKey') or ''
         if isinstance(token, bytes):
           token = token.decode('utf-8')
@@ -82,9 +84,10 @@ def main():
           mapbox_token = token
         demand_checked = now + 1.
       ready = demand and tracker is not None and gps is not None and fresh_tbt
-      # Carrot ShowNavMap: without a route/TBT (e.g. Naver via CarrotMan) still draw
-      # the roads around GPS for the onroad screen. Display preview only; the model
-      # stream below stays black exactly as before.
+      # Carrot ShowNavMap: when the model path is not rendering (no demand, route or
+      # TBT, e.g. Naver via CarrotMan), still draw the roads around GPS (plus the route
+      # line if one exists) for the onroad screen. Preview image only; the model stream
+      # below stays black exactly as before.
       free = show_nav_map and not ready and gps is not None
       if now >= next_render or (was_ready and not ready):
         started, cpu_started = time.monotonic(), time.process_time()
@@ -109,7 +112,8 @@ def main():
             if valid:
               image = result.image
           elif free and now >= retry_at and renderer is not None:
-            result = renderer.render(Position(gps.latitude, gps.longitude, gps.bearing))
+            result = renderer.render(Position(gps.latitude, gps.longitude, gps.bearing),
+                                     route if tracker is not None else None)
             if result.complete:
               preview = result.image
               reason = 'free'

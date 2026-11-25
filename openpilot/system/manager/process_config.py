@@ -154,6 +154,8 @@ procs = [
   PythonProcess("qcomgpsd", "openpilot.system.qcomgpsd.qcomgpsd", qcomgps, enabled=TICI, spawn=True),
   PythonProcess("navd", "openpilot.selfdrive.navd.navd", only_onroad),
   PythonProcess("mapsd", "openpilot.selfdrive.navigation.mapsd", only_onroad),
+  # Display-only: CarrotNavi map video -> small image for the onroad map panel (ShowNavMap).
+  PythonProcess("tmap_preview", "openpilot.selfdrive.carrot.tmap_preview", only_onroad),
   PythonProcess("pandad", "openpilot.selfdrive.pandad.pandad", always_run),
   PythonProcess("paramsd", "openpilot.selfdrive.locationd.paramsd", only_onroad),
   PythonProcess("lagd", "openpilot.selfdrive.locationd.lagd", only_onroad),
