@@ -943,6 +943,16 @@ class HudRenderer(Widget):
         align="center_bottom",
       )
 
+  def _draw_fullscreen_speed(self, bx: int, by: int):
+    """Compact current speed + speed limit for the full-screen nav map."""
+    self._draw_round_box(bx - 110, by - 70, 230, 300, rl.Color(0, 0, 0, 150),
+                         line_color=rl.Color(255, 255, 255, 90), roundness=0.12, segments=8, line_thickness=2)
+    cur_speed_int = 123 if self._debug_speed_panel else int(round(self.speed))
+    draw_text_ui_style(str(cur_speed_int), bx + 5, by + 50, 120, rl.WHITE, font=self._font_display,
+                       border_width=3.0, shadow_offset=8.0, align="center_bottom")
+    # Same limit/camera logic and colors as the normal panel, centred under the speed.
+    self._draw_carrot_speed_limit_box(bx - 70, by, self._get_speed_limit_info())
+
   def _draw_carrot_speed_limit_box(self, bx: int, by: int, speed_limit_info: tuple[int, int, int]):
     x_spd_limit, x_sign_type, road_limit_speed = speed_limit_info
 
@@ -1414,6 +1424,8 @@ class HudRenderer(Widget):
       self._draw_carrot_lower_status(bx, by)
       self._draw_carrot_speed_limit_box(bx, by, speed_limit_info)
       self._draw_carrot_device_state(bx, by)
+    else:
+      self._draw_fullscreen_speed(bx, by)
 
     self._draw_turn_info_hud(rect)
 
