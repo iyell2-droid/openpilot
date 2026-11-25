@@ -944,9 +944,19 @@ class HudRenderer(Widget):
       )
 
   def _draw_fullscreen_speed(self, bx: int, by: int):
-    """Compact current speed + speed limit for the full-screen nav map."""
-    self._draw_round_box(bx - 110, by - 90, 230, 315, rl.Color(0, 0, 0, 150),
+    """Compact set speed + current speed + speed limit for the full-screen nav map."""
+    self._draw_round_box(bx - 110, by - 150, 230, 375, rl.Color(0, 0, 0, 150),
                          line_color=rl.Color(255, 255, 255, 90), roundness=0.12, segments=8, line_thickness=2)
+    # Cruise set speed, same value/format as the normal panel's green number.
+    if self._engaged and self.is_cruise_set:
+      set_speed = float(self.set_speed)
+      if not ui_state.is_metric:
+        set_speed *= KM_TO_MILE
+      cruise_text = str(int(round(set_speed)))
+    else:
+      cruise_text = "--"
+    draw_text_ui_style(cruise_text, bx + 5, by - 85, 55, COLORS.CARROT_GREEN, font=self._font_display,
+                       border_width=1.0, shadow_offset=5.0, align="center_bottom")
     cur_speed_int = 123 if self._debug_speed_panel else int(round(self.speed))
     draw_text_ui_style(str(cur_speed_int), bx + 5, by + 50, 120, rl.WHITE, font=self._font_display,
                        border_width=3.0, shadow_offset=8.0, align="center_bottom")
