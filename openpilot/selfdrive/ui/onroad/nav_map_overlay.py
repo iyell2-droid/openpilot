@@ -1,13 +1,9 @@
 """C3X onroad navigation map panel.
 
-Sources, in order of preference:
-1. CarrotNavi (TMAP) MAP MAIN video, decoded by selfdrive/carrot/tmap_preview.py
-   into /dev/shm as raw RGB at native resolution (no image decoding here; the
-   bytes are uploaded straight into a texture).
-2. mapsd's shared grayscale road map preview PNG (/dev/shm/carrot_nav_map.png),
-   the same image the Web page and cluster HUD mode 7 use.
-
-The source picture is cropped (never stretched) to the panel shape.
+Source: CarrotNavi (TMAP) MAP MAIN video, decoded by selfdrive/carrot/tmap_preview.py
+into /dev/shm as raw RGB at native resolution (no image decoding here; the bytes are
+uploaded straight into a texture). The picture is cropped (never stretched) to the
+panel shape. Without fresh CarrotNavi video nothing is drawn and no touches are taken.
 
 ShowNavMap: 0 off, 1 small (bottom-right), 2 large (right), 3 tall (right, full height)
 Double-tap the map: toggle full screen. Double-tap again to return.
@@ -20,8 +16,6 @@ import time
 import pyray as rl
 
 from openpilot.selfdrive.carrot.tmap_preview import TMAP_PREVIEW_PATH, read_tmap_preview, tmap_preview_fresh
-from openpilot.selfdrive.navigation.preview import PREVIEW_PATH, preview_fresh
-from openpilot.system.ui.lib.text_draw import draw_text_ui_style
 
 PARAM_INTERVAL = 1.0
 CHECK_INTERVAL = 0.1
@@ -37,12 +31,10 @@ TALL_MAX_WIDTH_RATIO = 0.36  # of the onroad content width
 TALL_BOTTOM_RESERVE = 0.19   # of the panel height
 BG_COLOR = rl.Color(0, 0, 0, 170)
 FRAME_COLOR = rl.Color(255, 255, 255, 90)
-GRAY_MAP_TINT = rl.Color(150, 220, 255, 255)  # grayscale road map tinted light blue
 # Vertical crop anchor: TMAP keeps the vehicle low in the picture (screen_center_y_ratio ~0.8),
 # so when the top/bottom must be trimmed, trim mostly from the top.
 VERTICAL_ANCHOR = 0.75
 
-SOURCE_NONE, SOURCE_TMAP, SOURCE_ROADS = 0, 1, 2
 LAYER_UNDER_HUD, LAYER_OVER_HUD = 0, 1
 
 
@@ -72,10 +64,9 @@ class NavMapOverlay:
     self._panel = rl.Rectangle(0, 0, 0, 0)
     self._param_next_t = 0.0
     self._check_next_t = 0.0
-    self._source = SOURCE_NONE
+    self._fresh = False
     self._mtime = 0
     self._texture = None
-    self._texture_source = SOURCE_NONE
     self._showing = False
 
   @property
@@ -88,13 +79,13 @@ class NavMapOverlay:
 
   @property
   def fullscreen_showing(self) -> bool:
-    """Full screen with a map actually drawn (not the empty-source camera fallback)."""
+    """Full screen with a map actually drawn (CarrotNavi video present)."""
     return self._fullscreen and self._mode != 0 and self._showing
 
   # ----- input -----
   def handle_press(self, pos) -> bool:
     """Returns True when the touch belongs to the map (caller must not use it)."""
-    if self._mode == 0:
+    if self._mode == 0 or not self._showing:
       return False
     if not self._fullscreen and not rl.check_collision_point_rec(pos, self._panel):
       return False
@@ -166,36 +157,20 @@ class NavMapOverlay:
     if now < self._check_next_t:
       return
     self._check_next_t = now + CHECK_INTERVAL
-    if tmap_preview_fresh():
-      source, path = SOURCE_TMAP, TMAP_PREVIEW_PATH
-    elif preview_fresh():
-      source, path = SOURCE_ROADS, PREVIEW_PATH
-    else:
-      self._source = SOURCE_NONE
+    self._fresh = tmap_preview_fresh()
+    if not self._fresh:
       return
-    self._source = source
     try:
-      mtime = path.stat().st_mtime_ns
+      mtime = TMAP_PREVIEW_PATH.stat().st_mtime_ns
     except OSError:
-      self._source = SOURCE_NONE
+      self._fresh = False
       return
-    if mtime == self._mtime and self._texture_source == source:
+    if mtime == self._mtime and self._texture is not None:
       return
-    ok = self._load_tmap() if source == SOURCE_TMAP else self._load_png(path)
-    if ok:
-      self._texture_source = source
+    if self._load_tmap():
       self._mtime = mtime
     else:
-      self._source = SOURCE_NONE
-
-  def _load_png(self, path) -> bool:
-    texture = rl.load_texture(str(path))
-    if not texture.id:
-      return False
-    rl.set_texture_filter(texture, rl.TextureFilter.TEXTURE_FILTER_BILINEAR)
-    self._unload()
-    self._texture = texture
-    return True
+      self._fresh = False
 
   def _load_tmap(self) -> bool:
     frame = read_tmap_preview()
@@ -204,8 +179,7 @@ class NavMapOverlay:
     width, height, pixels = frame
     data = rl.ffi.cast("void *", rl.ffi.from_buffer(pixels))
     texture = self._texture
-    if (texture is not None and self._texture_source == SOURCE_TMAP and
-        texture.width == width and texture.height == height):
+    if texture is not None and texture.width == width and texture.height == height:
       rl.update_texture(texture, data)
       return True
     image = rl.Image(data, width, height, 1, rl.PixelFormat.PIXELFORMAT_UNCOMPRESSED_R8G8B8)
@@ -232,7 +206,7 @@ class NavMapOverlay:
     if self._mode == 3:
       width = user_width if user_width is not None else min(rect.height * TALL_ASPECT, rect.width * TALL_MAX_WIDTH_RATIO)
       return rl.Rectangle(rect.x + rect.width - width, rect.y, width, rect.height)
-    aspect = 16 / 9 if self._source != SOURCE_ROADS else 1.0
+    aspect = 16 / 9
     max_height = rect.height - 2 * MARGIN
     if self._mode == 2:
       width = user_width if user_width is not None else rect.width * 0.48
@@ -258,27 +232,22 @@ class NavMapOverlay:
     if self._mode == 0 or layer != self._layer():
       return
     self._refresh_texture(now)
-    showing = self._source != SOURCE_NONE and self._texture is not None and self._texture_source == self._source
+    showing = self._fresh and self._texture is not None
     self._showing = showing
+    if not showing:
+      self._panel = rl.Rectangle(0, 0, 0, 0)
+      return  # CarrotNavi not connected/sending: no window at all
     self._content = rect
     panel = self._panel_rect(rect)
     self._panel = panel
-    if self._fullscreen and not showing:
-      return  # never hide the camera behind an empty panel; double-tap the area to leave
     square = not self._fullscreen and self._mode != 3
     if not self._fullscreen:
       rl.draw_rectangle_rounded(panel, ROUNDNESS if square else 0.0, 10, rl.BLACK if self._mode == 3 else BG_COLOR)
-    if showing:
-      tint = rl.WHITE if self._source == SOURCE_TMAP else GRAY_MAP_TINT
-      dest = panel
-      if self._mode == 3 and not self._fullscreen:
-        dest = rl.Rectangle(panel.x, panel.y, panel.width, panel.height * (1 - TALL_BOTTOM_RESERVE))
-      source = cover_source_rect(self._texture.width, self._texture.height, dest.width / max(dest.height, 1))
-      rl.draw_texture_pro(self._texture, source, dest, rl.Vector2(0, 0), 0, tint)
-    else:
-      # Needs CarrotNavi video, or a route/GPS + map tiles for the road map
-      draw_text_ui_style("지도 대기중", panel.x + panel.width / 2, panel.y + panel.height / 2 - 20,
-                         32 if self._mode == 1 else 44, rl.WHITE, align="center_top", y_offset=0.0)
+    dest = panel
+    if self._mode == 3 and not self._fullscreen:
+      dest = rl.Rectangle(panel.x, panel.y, panel.width, panel.height * (1 - TALL_BOTTOM_RESERVE))
+    source = cover_source_rect(self._texture.width, self._texture.height, dest.width / max(dest.height, 1))
+    rl.draw_texture_pro(self._texture, source, dest, rl.Vector2(0, 0), 0, rl.WHITE)
     if square:
       rl.draw_rectangle_rounded_lines_ex(panel, ROUNDNESS, 10, 3, FRAME_COLOR)
 
@@ -286,7 +255,6 @@ class NavMapOverlay:
     if self._texture is not None:
       rl.unload_texture(self._texture)
       self._texture = None
-      self._texture_source = SOURCE_NONE
       self._mtime = 0
 
   def close(self) -> None:

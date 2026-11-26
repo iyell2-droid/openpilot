@@ -9,7 +9,6 @@ from openpilot.selfdrive.navigation.helpers import ParkedPosition
 from openpilot.selfdrive.navigation.jetlink_demand import jetlink_map_demand
 from openpilot.selfdrive.navigation.pmtiles import PMTiles
 from openpilot.selfdrive.navigation.preview import write_preview, preview_fresh, WEB_DEMAND_PATH
-from openpilot.selfdrive.carrot.tmap_preview import tmap_preview_fresh
 from openpilot.selfdrive.navigation.renderer import SIZE, MapRenderer, Position
 from openpilot.selfdrive.navigation.route import RouteTracker, route_coordinates
 
@@ -45,7 +44,6 @@ def main():
   server.start_listener()
   params = Params()
   demand_checked, demand = 0., False
-  show_nav_map = False
   mapbox_token = ''
   archive_created = 0.
   diagnostics = RuntimeDiagnostics('mapsd', cloudlog.event, interval=5.)
@@ -68,9 +66,6 @@ def main():
       fresh_tbt = sm.valid['navInstructionCarrot'] and 0 <= now - sm.recv_time['navInstructionCarrot'] < 2.
       # Navigation without usable position/instruction immediately publishes black.
       if now >= demand_checked:
-        # ShowNavMap is display-only: it must not change when the model gets a map.
-        # CarrotNavi (TMAP) video, when present, replaces this road map on screen.
-        show_nav_map = params.get_int('ShowNavMap') > 0 and not tmap_preview_fresh()
         demand = (params.get_bool('UsbGpuActive') or jetlink_map_demand(now=now) or
                   params.get_int('ClusterHudScreenMode') == 7 or preview_fresh(WEB_DEMAND_PATH))
         token = os.environ.get('MAPBOX_TOKEN') or params.get('MapboxPublicKey') or ''
@@ -84,24 +79,17 @@ def main():
           mapbox_token = token
         demand_checked = now + 1.
       ready = demand and tracker is not None and gps is not None and fresh_tbt
-      # Carrot ShowNavMap: when the model path is not rendering (no demand, route or
-      # TBT, e.g. Naver via CarrotMan), still draw the roads around GPS (plus the route
-      # line if one exists) for the onroad screen. Preview image only; the model stream
-      # below stays black exactly as before.
-      free = show_nav_map and not ready and gps is not None
       if now >= next_render or (was_ready and not ready):
         started, cpu_started = time.monotonic(), time.process_time()
         image.fill(0)
         valid = False
-        preview = None
         reason = 'idle' if not demand else 'route' if tracker is None else 'position' if gps is None else 'instruction' if not fresh_tbt else 'tiles'
         try:
-          if (ready or free) and now >= retry_at:
+          if ready and now >= retry_at:
             if renderer is None:
               archive = MapboxTiles(mapbox_token) if mapbox_token else PMTiles(RemoteTiles())
               archive_created = now
               renderer = MapRenderer(archive)
-          if ready and now >= retry_at and renderer is not None:
             pose = tracker.update_pose(gps.longitude, gps.latitude, gps.speed * (now - gps.time))
             # Fetch only the current view; do not prefetch a whole country/route.
             if pose is not None:
@@ -111,12 +99,6 @@ def main():
             reason = 'ready' if valid else 'route_position' if pose is None else 'tiles'
             if valid:
               image = result.image
-          elif free and now >= retry_at and renderer is not None:
-            result = renderer.render(Position(gps.latitude, gps.longitude, gps.bearing),
-                                     route if tracker is not None else None)
-            if result.complete:
-              preview = result.image
-              reason = 'free'
         except (OSError, ValueError, RuntimeError):
           cloudlog.warning('mapsd: map unavailable; retry in 30 seconds')
           if archive is not None:
@@ -127,17 +109,14 @@ def main():
         if finished - started >= .5:
           image.fill(0)
           valid = False
-          preview = None
           reason = 'slow'
         cpu = time.process_time() - cpu_started
-        # Display-only previews are written every 0.5 s, so never render them faster.
-        interval = render_interval(cpu) if valid else max(.5, render_interval(cpu)) if preview is not None else max(1., render_interval(cpu))
-        next_render = finished + interval
+        next_render = finished + (render_interval(cpu) if valid else max(1., render_interval(cpu)))
         # Timestamp at render START prevents a slow tile request looking fresh.
         server.send(VisionStreamType.VISION_STREAM_MAP, image.tobytes(), rk.frame,
                     route_id, int(started * 1e9))
         if finished >= next_preview:
-          write_preview(image if preview is None else preview, reason=reason)
+          write_preview(image, reason=reason)
           next_preview = finished + .5
         diagnostics.record(render_ms=(finished - started) * 1000, cpu_ms=cpu * 1000,
                            context={'map_valid': valid, 'route_points': len(route), 'interval': render_interval(cpu),
