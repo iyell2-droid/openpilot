@@ -7,7 +7,7 @@ from openpilot.selfdrive.ui.onroad.exp_button import ExpButton
 from openpilot.selfdrive.ui.ui_state import ui_state, UIStatus
 from openpilot.system.hardware.usbgpu import usbgpu_badge_state
 from openpilot.system.ui.lib.application import gui_app, FontWeight
-from openpilot.system.ui.lib.multilang import tr
+from openpilot.system.ui.lib.multilang import tr, multilang
 from openpilot.system.ui.lib.text_measure import measure_text_cached
 from openpilot.system.ui.lib.text_draw import draw_text_ui_style
 from openpilot.system.ui.widgets import Widget
@@ -206,6 +206,7 @@ class HudRenderer(Widget):
     self._show_date_time = 0
     self._show_tpms = 1
     self._show_plot_mode = 0
+    self._hud_panel_style = 1  # 0: original Carrot panel, 1: translucent card, 2: round gauge
     self._longitudinal_personality = 7
 
     self._date_time_minute_key: tuple[int, int, int, int, int] | None = None
@@ -237,6 +238,10 @@ class HudRenderer(Widget):
     self._show_date_time = show_date_time
     self._show_tpms = show_tpms
     self._show_plot_mode = show_plot_mode
+    try:  # new key: keep the card if the Params table was not rebuilt yet
+      self._hud_panel_style = ui_state.params.get_int("HudPanelStyle")
+    except Exception:
+      pass
     self._longitudinal_personality = longitudinal_personality
     self._hud_params_next_refresh_time = now if personality_read_failed else now + HUD_PARAM_REFRESH_INTERVAL
 
@@ -286,7 +291,8 @@ class HudRenderer(Widget):
     self._refresh_hud_params(time.monotonic())
     self._plot_renderer.update(self._show_plot_mode)
     state = self._overlay_state
-    key = (state.key if state else None, self._blink_timer <= 8, self._disp_timer < 32, self._show_plot_mode)
+    key = (state.key if state else None, self._blink_timer <= 8, self._disp_timer < 32, self._show_plot_mode,
+           self._hud_panel_style)
     self._overlay.draw(rect, self._paint, key, enabled=state is not None and state.enabled,
                        urgent=state is not None and state.urgent)
 
@@ -938,6 +944,220 @@ class HudRenderer(Widget):
         align="center_bottom",
       )
 
+  # ----- Clean translucent card panel (HudPanelStyle 1) -----
+  # Same information and alert colours as the original panel, laid out as one card:
+  # speed | SET + gap + speed limit sign, with mode/gear/APN chips underneath.
+  CARD_W, CARD_H = 520, 345
+  CARD_BG = rl.Color(10, 12, 16, 150)
+  CARD_GREY = rl.Color(170, 176, 190, 255)
+  CARD_DIVIDER = rl.Color(255, 255, 255, 50)
+  CARD_CHIP = rl.Color(255, 255, 255, 40)
+  SIGN_RED = rl.Color(220, 30, 40, 255)
+
+  def _card_text(self, text, x, y, size, color, align="left_center", shadow=3.0):
+    draw_text_ui_style(text, x, y, size, color, font=self._font_display, border_width=0.0,
+                       shadow_offset=shadow, align=align, y_offset=0.0)
+
+  def _card_chip(self, x, y, text, size, fg, bg, h=44, padx=16) -> float:
+    from openpilot.system.ui.lib.application import font_fallback
+    width = measure_text_cached(font_fallback(self._font_display, text), text, size).x
+    self._draw_round_box(x, y, width + 2 * padx, h, bg, roundness=1.0, segments=10, line_thickness=0)
+    self._card_text(text, x + padx + width / 2, y + h / 2, size, fg, align="center", shadow=2.0)
+    return x + width + 2 * padx
+
+  def _draw_card_limit_sign(self, cx, cy, r, speed_limit_info) -> None:
+    x_spd_limit, x_sign_type, road_limit_speed = speed_limit_info
+    cam = x_spd_limit > 0 and x_sign_type != 22
+    if cam:
+      disp_speed = int(x_spd_limit if ui_state.is_metric else (x_spd_limit * KM_TO_MILE + 0.5))
+    else:
+      disp_speed = int(road_limit_speed if ui_state.is_metric else (road_limit_speed * KM_TO_MILE + 0.5))
+    if disp_speed <= 0:
+      return
+    fill, ring, text_color = rl.WHITE, self.SIGN_RED, rl.Color(20, 20, 20, 255)
+    if cam:  # enforcement camera: blink red/yellow like the original LIMIT box
+      fill = COLORS.RED_210 if self._blink_timer <= 8 else COLORS.YELLOW_210
+      ring, text_color = rl.WHITE, rl.WHITE
+      self._card_text("CAM", cx, cy - r - 20, 24, rl.WHITE, align="center")
+    elif self.speed > disp_speed + 2:  # over the limit
+      fill, ring, text_color = self.SIGN_RED, rl.WHITE, rl.WHITE
+    center = rl.Vector2(cx, cy)
+    rl.draw_circle_v(center, r, ring)
+    rl.draw_circle_v(center, r * 0.80, fill)
+    self._card_text(str(disp_speed), cx, cy, int(r * (0.95 if disp_speed < 100 else 0.78)), text_color,
+                    align="center", shadow=0.0)
+
+  def _card_set_speed_text(self) -> str:
+    if not (self._engaged and self.is_cruise_set):
+      return "--"
+    set_speed = float(self.set_speed)
+    if not ui_state.is_metric:
+      set_speed *= KM_TO_MILE
+    return str(int(round(set_speed)))
+
+  def _card_override(self) -> tuple[str, rl.Color]:
+    ov = self._set_speed_override.compute(ui_state.sm, float(self.set_speed))
+    if not ov.active:
+      return "", rl.GREEN
+    ov_speed = float(ov.speed_kph) * (1.0 if ui_state.is_metric else KM_TO_MILE)
+    ov_color = {2: COLORS.ORANGE_230, 3: COLORS.VEHICLE_NAVI_LAVENDER,
+                4: COLORS.EXTERNAL_NAVI_ORANGE}.get(ov.speed_color_mode, rl.GREEN)
+    return f"{ov.label} {int(round(ov_speed))}", ov_color
+
+  def _draw_card_gap_bars(self, x, bottom, gap, w=12, step=18, h=30) -> None:
+    for i in range(4):
+      bar_h = h * (0.45 + 0.55 * i / 3)
+      color = COLORS.GREEN_210 if i < min(gap, 4) else rl.Color(255, 255, 255, 60)
+      self._draw_round_box(x + i * step, bottom - bar_h, w, bar_h, color, roundness=0.5, segments=4, line_thickness=0)
+
+  def _draw_card_chips(self, x, cy) -> float:
+    mode_text, mode_color = self._get_driving_mode_text_and_color()
+    if self._debug_speed_panel:
+      mode_text, mode_color = "safe", COLORS.ORANGE_230
+    if mode_text:
+      whiteish = min(mode_color.r, mode_color.g, mode_color.b) > 200  # "norm": neutral chip, white text stays readable
+      chip_bg = self.CARD_CHIP if whiteish else rl.Color(mode_color.r, mode_color.g, mode_color.b, 120)
+      x = self._card_chip(x, cy, mode_text, 26, rl.WHITE, chip_bg) + 10
+    gear = self._get_gear_text()
+    if gear:
+      x = self._card_chip(x, cy, gear, 26, rl.WHITE, self.CARD_CHIP) + 10
+    active_carrot = self._get_active_carrot()
+    if active_carrot >= 2:
+      x = self._card_chip(x, cy, "APN", 24, rl.WHITE, rl.Color(46, 204, 113, 140)) + 10
+    elif active_carrot >= 1:
+      x = self._card_chip(x, cy, "APM", 24, rl.WHITE, rl.Color(COLORS.BLUE_210.r, COLORS.BLUE_210.g, COLORS.BLUE_210.b, 140)) + 10
+    if self._get_nav_path_vertex_count() > 1:
+      x = self._card_chip(x, cy, "ROUTE", 22, rl.WHITE, self.CARD_CHIP) + 10
+    return x
+
+  # ----- Round gauge panel (HudPanelStyle 2) -----
+  GAUGE_R = 165
+  GAUGE_MAX_KPH = 180
+  GAUGE_START, GAUGE_END = 135.0, 405.0
+
+  def _gauge_angle(self, value: float) -> float:
+    vmax = self.GAUGE_MAX_KPH if ui_state.is_metric else 110
+    return self.GAUGE_START + (self.GAUGE_END - self.GAUGE_START) * max(0.0, min(value, vmax)) / vmax
+
+  def _draw_gauge_panel(self, rect: rl.Rectangle) -> None:
+    import math
+    korean = str(multilang.language).startswith("ko")
+    speed_limit_info = self._get_speed_limit_info()
+    x_spd_limit, x_sign_type, _ = speed_limit_info
+    R = self.GAUGE_R
+    cx = rect.x + 40 + R + 25
+    cy = rect.y + rect.height - 15 - (R + 25)
+    center = rl.Vector2(cx, cy)
+
+    cam_detected = x_spd_limit > 0 and x_sign_type not in (22, 4)
+    bg = COLORS.RED_180 if (cam_detected and self._blink_timer > 8) else rl.Color(8, 10, 14, 165)
+    rl.draw_circle_v(center, R + 25, bg)
+
+    if self._show_device_state > 0:  # CPU/MEM/DISK·VOLT above the gauge
+      top = cy - R - 25
+      self._draw_carrot_device_state(int(rect.x + 40 + 65 + 35), int(top - 62 + 200))
+
+    # track, speed arc, ticks
+    rl.draw_ring(center, R - 8, R + 8, self.GAUGE_START, self.GAUGE_END, 72, rl.Color(255, 255, 255, 55))
+    cur_speed_int = 123 if self._debug_speed_panel else int(round(self.speed))
+    if cur_speed_int > 0:
+      rl.draw_ring(center, R - 8, R + 8, self.GAUGE_START, self._gauge_angle(cur_speed_int), 72, rl.WHITE)
+    vmax = self.GAUGE_MAX_KPH if ui_state.is_metric else 110
+    tick_step = 20 if ui_state.is_metric else 10
+    for v in range(0, vmax + 1, tick_step):
+      t = math.radians(self._gauge_angle(v))
+      rl.draw_line_ex(rl.Vector2(cx + (R - 34) * math.cos(t), cy + (R - 34) * math.sin(t)),
+                      rl.Vector2(cx + (R - 22) * math.cos(t), cy + (R - 22) * math.sin(t)), 3, rl.Color(255, 255, 255, 120))
+    set_text = self._card_set_speed_text()
+    if set_text != "--":  # set speed marker on the ring
+      t = math.radians(self._gauge_angle(float(set_text)))
+      rl.draw_line_ex(rl.Vector2(cx + (R - 24) * math.cos(t), cy + (R - 24) * math.sin(t)),
+                      rl.Vector2(cx + (R + 14) * math.cos(t), cy + (R + 14) * math.sin(t)), 9, COLORS.CARROT_GREEN)
+
+    # centre: speed, unit, small SET
+    ov_text, ov_color = self._card_override()
+    if ov_text:
+      self._card_text(ov_text, cx, cy - 92, 28, ov_color, align="center")
+    self._card_text(str(cur_speed_int), cx, cy - 8, 130, rl.WHITE, align="center", shadow=5.0)
+    self._card_text("km/h" if ui_state.is_metric else "mph", cx, cy + 58, 26, self.CARD_GREY, align="center")
+    self._card_text(f"SET {set_text}", cx, cy + 108, 32, COLORS.CARROT_GREEN, align="center")
+
+    # speed limit sign top-right of the gauge, traffic light top-left
+    self._draw_card_limit_sign(cx + R + 10, cy - R + 15, 44, speed_limit_info)
+    self._draw_carrot_traffic_light(int(cx - R - 10), int(cy - R + 15 - 270))
+
+    # side card: gap, mode, gear, APN
+    sx, sy, sw, sh = cx + R + 40, cy - 55, 215, 230
+    self._draw_round_box(sx, sy, sw, sh, rl.Color(8, 10, 14, 165), roundness=0.18, segments=10, line_thickness=0)
+    lx, vx = sx + 22, sx + 92
+    gap = self._get_cruise_gap()
+    self._card_text("차간" if korean else "GAP", lx, sy + 32, 24, self.CARD_GREY)
+    self._card_text(str(gap), sx + sw - 22, sy + 32, 26, rl.WHITE, align="right_center")
+    self._draw_card_gap_bars(lx, sy + 82, gap, w=16, step=24, h=30)
+    if self._gps_has_fix():
+      self._card_text("GPS", lx + 100, sy + 68, 22, rl.GREEN)
+    mode_text, mode_color = self._get_driving_mode_text_and_color()
+    if self._debug_speed_panel:
+      mode_text, mode_color = "safe", COLORS.ORANGE_230
+    self._card_text("모드" if korean else "MODE", lx, sy + 118, 24, self.CARD_GREY)
+    self._card_text(mode_text or "--", vx, sy + 118, 28, rl.Color(mode_color.r, mode_color.g, mode_color.b, 255) if mode_text else rl.WHITE)
+    self._card_text("기어" if korean else "GEAR", lx, sy + 160, 24, self.CARD_GREY)
+    self._card_text(self._get_gear_text() or "--", vx, sy + 160, 28, rl.WHITE)
+    active_carrot = self._get_active_carrot()
+    if active_carrot >= 2:
+      self._card_text("APN", lx, sy + 202, 26, rl.Color(120, 255, 160, 255))
+    elif active_carrot >= 1:
+      self._card_text("APM", lx, sy + 202, 26, rl.Color(120, 180, 255, 255))
+    if self._get_nav_path_vertex_count() > 1:
+      self._card_text("ROUTE", vx, sy + 202, 22, rl.WHITE)
+
+  def _draw_card_panel(self, rect: rl.Rectangle) -> None:
+    korean = str(multilang.language).startswith("ko")
+    speed_limit_info = self._get_speed_limit_info()
+    x_spd_limit, x_sign_type, _ = speed_limit_info
+
+    x0 = rect.x + 20
+    y0 = rect.y + rect.height - 15 - self.CARD_H
+    x1 = x0 + self.CARD_W
+
+    cam_detected = x_spd_limit > 0 and x_sign_type not in (22, 4)
+    bg = COLORS.RED_180 if (cam_detected and self._blink_timer > 8) else self.CARD_BG
+    self._draw_round_box(x0, y0, self.CARD_W, self.CARD_H, bg, roundness=0.12, segments=12, line_thickness=0)
+
+    # device state (CPU/MEM/DISK·VOLT) above the card, only when ShowDeviceState is on
+    if self._show_device_state > 0:
+      self._draw_carrot_device_state(int(x0 + 65 + 35), int(y0 - 62 + 200))
+
+    # traffic light / signal assist just right of the card
+    self._draw_carrot_traffic_light(int(x1 + 55), int(y0 + 60 - 270))
+
+    # --- left: current speed ---
+    self._card_text("km/h" if ui_state.is_metric else "mph", x0 + 30, y0 + 38, 26, self.CARD_GREY)
+    if self._gps_has_fix():
+      self._card_text("GPS", x0 + 120, y0 + 38, 24, rl.GREEN)
+    cur_speed_int = 123 if self._debug_speed_panel else int(round(self.speed))
+    self._card_text(str(cur_speed_int), x0 + 24, y0 + 150, 150, rl.WHITE, shadow=5.0)
+
+    rl.draw_line_ex(rl.Vector2(x0 + 330, y0 + 28), rl.Vector2(x0 + 330, y0 + 252), 2, self.CARD_DIVIDER)
+
+    # --- right: SET (kept small), override, gap bars, limit sign ---
+    rx = x0 + 352
+    self._card_text("SET", rx, y0 + 38, 24, self.CARD_GREY)
+    self._card_text(self._card_set_speed_text(), rx, y0 + 92, 54, COLORS.CARROT_GREEN)
+
+    ov_text, ov_color = self._card_override()
+    if ov_text:
+      self._card_text(ov_text, x1 - 20, y0 + 38, 26, ov_color, align="right_center")
+
+    gap = self._get_cruise_gap()
+    self._card_text(f"{'차간' if korean else 'GAP'} {gap}", rx, y0 + 150, 24, self.CARD_GREY)
+    self._draw_card_gap_bars(rx, y0 + 205, gap)
+
+    self._draw_card_limit_sign(x1 - 50, y0 + 190, 34, speed_limit_info)
+
+    # --- bottom chips: driving mode, gear, APN/APM, ROUTE ---
+    self._draw_card_chips(x0 + 26, y0 + 280)
+
   def _draw_carrot_speed_limit_box(self, bx: int, by: int, speed_limit_info: tuple[int, int, int]):
     x_spd_limit, x_sign_type, road_limit_speed = speed_limit_info
 
@@ -1395,6 +1615,14 @@ class HudRenderer(Widget):
       )
 
   def _draw_set_speed_carrot(self, rect: rl.Rectangle) -> None:
+
+    if self._hud_panel_style in (1, 2):
+      if self._hud_panel_style == 2:
+        self._draw_gauge_panel(rect)
+      else:
+        self._draw_card_panel(rect)
+      self._draw_turn_info_hud(rect)
+      return
 
     # C drawHud anchor
     bx = int(rect.x + 140)

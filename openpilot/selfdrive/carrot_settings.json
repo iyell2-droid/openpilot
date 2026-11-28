@@ -553,6 +553,7 @@
             "ShowDateTime",
             "ShowPathEnd",
             "ShowDeviceState",
+            "HudPanelStyle",
             "ShowLaneInfo",
             "ShowRadarInfo",
             "ShowRouteInfo",
@@ -2607,6 +2608,23 @@
       "max": 1,
       "default": 1,
       "unit": 1
+    },
+    {
+      "group": "화면",
+      "name": "HudPanelStyle",
+      "title": "주행화면 왼쪽 아래 패널 디자인(1)",
+      "descr": "0: 기존 당근 패널, 1: 반투명 카드, 2: 계기판(원형 게이지). 표시 내용(속도·설정속도·제한속도·차간·모드·기어·APN·신호등·디바이스정보)은 같고 모양만 바뀝니다.",
+      "egroup": "DISP",
+      "etitle": "Onroad Bottom-Left Panel Style(1)",
+      "edescr": "0: original Carrot panel, 1: translucent card, 2: round gauge. Same information (speed, set speed, limit, gap, mode, gear, APN, traffic light, device info); only the look changes.",
+      "cgroup": "显示设置",
+      "ctitle": "行驶画面左下面板样式(1)",
+      "cdescr": "0:原有面板, 1:半透明卡片, 2:圆形仪表。显示内容相同，仅外观不同。",
+      "min": 0,
+      "max": 2,
+      "default": 1,
+      "unit": 1,
+      "control": "select"
     },
     {
       "group": "화면",
