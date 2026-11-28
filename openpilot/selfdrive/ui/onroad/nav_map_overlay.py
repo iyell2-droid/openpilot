@@ -82,6 +82,12 @@ class NavMapOverlay:
     """Full screen with a map actually drawn (CarrotNavi video present)."""
     return self._fullscreen and self._mode != 0 and self._showing
 
+  def camera_shift(self) -> float:
+    """Pixels to move the camera view left so it is centred beside a tall map panel."""
+    if self._mode != 3 or self._fullscreen or not self._showing:
+      return 0.0
+    return round(self._panel.width / 2)
+
   # ----- input -----
   def handle_press(self, pos) -> bool:
     """Returns True when the touch belongs to the map (caller must not use it)."""

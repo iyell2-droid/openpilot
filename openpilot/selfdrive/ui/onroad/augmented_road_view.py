@@ -65,6 +65,7 @@ class AugmentedRoadView(CameraView):
     self._plot_mode = 0
     self._plot_mode_next_t = 0.0
     self._nav_map = NavMapOverlay(ui_state.params)
+    self._camera_shift = 0.0
     self._border_params = TimedSnapshotCache(
       BorderParamSnapshot(),
       lambda: read_border_params(ui_state.params, ui_state.params_memory),
@@ -96,6 +97,9 @@ class AugmentedRoadView(CameraView):
     # scissor begin/end는 raylib 배치 flush 지점이라 특정 구간에 귀속시키지 않는다 —
     # total과 구간 합의 차이(미귀속)로 남는다. extras = carrot 테두리(+텍스트)
     cam_ms = model_ms = ds_ms = hud_ms = alert_ms = extras_ms = 0.0
+
+    # Uses the map panel of the previous frame (the map is drawn after the camera).
+    self._camera_shift = self._nav_map.camera_shift()
 
     if not self._suppress_camera_for_cluster:
       self._switch_stream_if_needed(ui_state.sm)
@@ -256,7 +260,8 @@ class AugmentedRoadView(CameraView):
       ui_state.sm.recv_frame['liveCalibration'],
       self._content_rect.width,
       self._content_rect.height,
-      self.stream_type
+      self.stream_type,
+      self._camera_shift,
     )
     if cache_key == self._matrix_cache_key and self._cached_matrix is not None:
       return self._cached_matrix
@@ -291,6 +296,11 @@ class AugmentedRoadView(CameraView):
         x_offset, y_offset = 0, 0
     except (ZeroDivisionError, OverflowError):
       x_offset, y_offset = 0, 0
+
+    # Carrot: with the tall nav map on the right, move the view left so the road ahead
+    # is centred in the visible area. Camera and model overlays share this transform.
+    # The uncovered strip on the right stays under the map panel.
+    x_offset = x_offset + self._camera_shift
 
     # Cache the computed transformation matrix to avoid recalculations
     self._matrix_cache_key = cache_key
