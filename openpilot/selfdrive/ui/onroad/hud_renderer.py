@@ -1074,13 +1074,13 @@ class HudRenderer(Widget):
       rl.draw_line_ex(rl.Vector2(cx + (R - 24) * math.cos(t), cy + (R - 24) * math.sin(t)),
                       rl.Vector2(cx + (R + 14) * math.cos(t), cy + (R + 14) * math.sin(t)), 9, COLORS.CARROT_GREEN)
 
-    # centre: speed, unit, small SET
+    # centre: speed, unit, SET
     ov_text, ov_color = self._card_override()
     if ov_text:
       self._card_text(ov_text, cx, cy - 92, 28, ov_color, align="center")
     self._card_text(str(cur_speed_int), cx, cy - 8, 130, rl.WHITE, align="center", shadow=5.0)
     self._card_text("km/h" if ui_state.is_metric else "mph", cx, cy + 58, 26, self.CARD_GREY, align="center")
-    self._card_text(f"SET {set_text}", cx, cy + 108, 32, COLORS.CARROT_GREEN, align="center")
+    self._card_text(f"SET {set_text}", cx, cy + 112, 40, COLORS.CARROT_GREEN, align="center")
 
     # speed limit sign top-right of the gauge, traffic light top-left
     self._draw_card_limit_sign(cx + R + 10, cy - R + 15, 44, speed_limit_info)
@@ -1140,10 +1140,10 @@ class HudRenderer(Widget):
 
     rl.draw_line_ex(rl.Vector2(x0 + 330, y0 + 28), rl.Vector2(x0 + 330, y0 + 252), 2, self.CARD_DIVIDER)
 
-    # --- right: SET (kept small), override, gap bars, limit sign ---
+    # --- right: SET, override, gap bars, limit sign ---
     rx = x0 + 352
     self._card_text("SET", rx, y0 + 38, 24, self.CARD_GREY)
-    self._card_text(self._card_set_speed_text(), rx, y0 + 92, 54, COLORS.CARROT_GREEN)
+    self._card_text(self._card_set_speed_text(), rx - 2, y0 + 100, 76, COLORS.CARROT_GREEN)
 
     ov_text, ov_color = self._card_override()
     if ov_text:
