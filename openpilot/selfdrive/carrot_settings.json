@@ -552,7 +552,6 @@
             "ShowDateTime",
             "ShowPathEnd",
             "ShowDeviceState",
-            "HudPanelStyle",
             "ShowLaneInfo",
             "ShowRadarInfo",
             "ShowRouteInfo",
@@ -684,7 +683,8 @@
             "HotspotOnBoot",
             "MapboxStyle",
             "ShowNavMap",
-            "ShowNavMapWidth"
+            "ShowNavMapWidth",
+            "HudPanelStyle"
           ]
         },
         {
