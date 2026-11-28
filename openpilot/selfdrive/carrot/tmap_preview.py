@@ -9,6 +9,10 @@ RGB24 at native resolution, at a bounded rate. The UI only uploads those bytes
 to a texture (no image decoding in the render thread) and crops them for the
 panel shape. Nothing here feeds driving or the model.
 
+The map is only shown while CarrotNavi reports active route guidance
+(carrotNavi.navigationStatus.guidanceActive). Without guidance, or when the app
+is not connected, the preview is removed and decoding pauses.
+
 File format: 8-byte header (uint16 width, uint16 height, 4 reserved bytes,
 little endian) followed by width*height*3 bytes of RGB.
 """
@@ -25,6 +29,7 @@ RAW_HEADER = struct.Struct('<HHI')
 MAX_DIMENSION = 1920
 WRITE_INTERVAL = 0.2  # at most 5 Hz to /dev/shm
 PARAM_INTERVAL = 1.0
+GUIDANCE_STALE_S = 3.0  # carrotNavi is published at 2 Hz; older status counts as "not guiding"
 H264_FLAG_KEYFRAME = 1
 MSG_IMAGE, MSG_CONFIG, MSG_FRAME, MSG_CLEAR = 1, 2, 3, 4
 
@@ -80,8 +85,18 @@ class TmapPreview:
     self._session = ''
     self._waiting_keyframe = True
     self._next_write = 0.0
+    self._guiding = True
     self.written = 0
     self.errors = 0
+
+  def set_guidance(self, guiding: bool) -> None:
+    """Only show the map during CarrotNavi route guidance."""
+    if guiding == self._guiding:
+      return
+    self._guiding = guiding
+    if not guiding:
+      self.reset()  # resume from the next keyframe
+      clear_tmap_preview(self._path)
 
   def reset(self) -> None:
     self._codec = None
@@ -92,6 +107,8 @@ class TmapPreview:
     if int(_field(data, 'schemaVersion', 0)) != 1:
       return False
     if (str(_field(data, 'kind', '')), str(_field(data, 'name', ''))) != MAP_KEY:
+      return False
+    if not self._guiding:
       return False
     session = str(_field(data, 'sessionId', '') or '')
     if session and session != self._session:
@@ -179,7 +196,9 @@ def main() -> None:
 
   params = Params()
   sock = None
+  status_sock = None
   preview = None
+  guidance_at = -1e9
   next_param = 0.0
   enabled = False
   try:
@@ -193,13 +212,23 @@ def main() -> None:
           enabled = False
         if enabled and sock is None:
           sock = messaging.sub_sock('carrotNaviMedia', conflate=False, timeout=100)
+          status_sock = messaging.sub_sock('carrotNavi', conflate=True)
           preview = TmapPreview()
+          guidance_at = -1e9
         elif not enabled and sock is not None:
-          sock = preview = None
+          sock = status_sock = preview = None
           clear_tmap_preview()
       if sock is None or preview is None:
         time.sleep(PARAM_INTERVAL)
         continue
+      status = messaging.recv_one_or_none(status_sock)
+      if status is not None:
+        try:
+          if bool(status.carrotNavi.navigationStatus.guidanceActive):
+            guidance_at = time.monotonic()
+        except Exception:
+          pass
+      preview.set_guidance(time.monotonic() - guidance_at < GUIDANCE_STALE_S)
       msg = messaging.recv_one(sock)  # blocks up to the socket timeout
       if msg is None:
         continue
