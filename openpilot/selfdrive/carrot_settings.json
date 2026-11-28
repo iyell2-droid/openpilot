@@ -274,8 +274,7 @@
               "params": [
                 "AutoRoadSpeedLimitOffset",
                 "AutoRoadSpeedAdjust",
-                "AutoSpeedUptoRoadSpeedLimit",
-                "AutoSpeedUpMaxKph"
+                "AutoSpeedUptoRoadSpeedLimit"
               ]
             },
             {
@@ -2461,22 +2460,6 @@
       "default": 0,
       "unit": 10,
       "display_unit": "percent"
-    },
-    {
-      "group": "크루즈",
-      "name": "AutoSpeedUpMaxKph",
-      "title": "자동속도증가 최대속도(0km/h)",
-      "descr": "앞차에 따라 설정속도를 자동으로 올릴 때의 최고 속도입니다. 0: 제한 없음(도로 제한속도×자동속도증가 비율까지). 예: 100이면 자동으로는 100km/h까지만 올립니다. 운전자가 직접 올린 설정속도는 낮추지 않으며 감속 제어는 바꾸지 않습니다.",
-      "egroup": "CRUISE",
-      "etitle": "Auto Speed-Up Max(0km/h)",
-      "edescr": "Highest set speed the lead-following automatic increase may reach. 0: no cap (road limit x Auto Speed-Up ratio). Example: 100 stops automatic increases at 100 km/h. Never lowers a speed set by the driver; braking is unchanged.",
-      "cgroup": "巡航设置",
-      "ctitle": "自动提速最高速度(0km/h)",
-      "cdescr": "根据前车自动提高设定速度时的最高速度。0:不限制(道路限速×自动提速比例)。例:100则自动最多提到100km/h。不会降低驾驶员手动设定的速度，不改变减速控制。",
-      "min": 0,
-      "max": 200,
-      "default": 0,
-      "unit": 5
     },
     {
       "group": "감속제어",
