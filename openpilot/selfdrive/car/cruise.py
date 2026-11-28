@@ -250,6 +250,7 @@ class VCruiseCarrot:
     self.autoCruiseControl = 0
     self.autoCruiseControl_cancel_timer = 0
     self.AutoSpeedUptoRoadSpeedLimit = 0.0
+    self.autoSpeedUpMaxKph = 0.0  # 0: no extra cap on the lead-following automatic increase
     self.autoGasCancelSpeed = 30
 
     self.useLaneLineSpeed = self.params.get_int("UseLaneLineSpeed")
@@ -284,6 +285,10 @@ class VCruiseCarrot:
       self.autoGasSyncSpeed = self.params.get_int("AutoGasSyncSpeed")
       self.applyModelSpeed = self.params.get_float("ApplyModelSpeed") * 0.01
       self.autoSpeedUptoRoadSpeedLimit = self.params.get_float("AutoSpeedUptoRoadSpeedLimit") * 0.01
+      try:  # new key: keep the old behaviour if the Params table was not rebuilt yet
+        self.autoSpeedUpMaxKph = max(0, self.params.get_int("AutoSpeedUpMaxKph")) * unit_factor
+      except Exception:
+        self.autoSpeedUpMaxKph = 0.0
       self.autoRoadSpeedAdjust = self.params.get_float("AutoRoadSpeedAdjust") * 0.01
 
       useLaneLineSpeed = self.params.get_int("UseLaneLineSpeed") * unit_factor
@@ -859,8 +864,11 @@ class VCruiseCarrot:
     if self.autoRoadSpeedLimitOffset > 0:
       self._v_cruise_kph_at_brake = self.nRoadLimitSpeed + self.autoRoadSpeedLimitOffset
 
-    if not self._pause_auto_speed_up and self.v_lead_kph + 5 > v_cruise_kph and v_cruise_kph < road_limit_kph and self.d_rel < 60:
-      v_cruise_kph = min(v_cruise_kph + 5, road_limit_kph)
+    # Lead-following increase only: AutoSpeedUpMaxKph caps how high it may raise the set
+    # speed. It never lowers a set speed the driver chose above the cap.
+    speed_up_limit_kph = min(road_limit_kph, self.autoSpeedUpMaxKph) if self.autoSpeedUpMaxKph > 0 else road_limit_kph
+    if not self._pause_auto_speed_up and self.v_lead_kph + 5 > v_cruise_kph and v_cruise_kph < speed_up_limit_kph and self.d_rel < 60:
+      v_cruise_kph = min(v_cruise_kph + 5, speed_up_limit_kph)
     elif self.autoRoadSpeedAdjust < 0 and self.nRoadLimitSpeed != self.nRoadLimitSpeed_last:  # 도로제한속도가 바뀌면, 바뀐속도로 속도를 바꿈.
       if self.autoRoadSpeedLimitOffset < 0:
         v_cruise_kph = self.nRoadLimitSpeed * self.autoNaviSpeedSafetyFactor
