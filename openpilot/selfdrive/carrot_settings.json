@@ -556,9 +556,7 @@
             "ShowLaneInfo",
             "ShowRadarInfo",
             "ShowRouteInfo",
-            "ShowPlotMode",
-            "ShowNavMap",
-            "ShowNavMapWidth"
+            "ShowPlotMode"
           ]
         },
         {
@@ -684,7 +682,9 @@
           "zh": "网络与地图",
           "params": [
             "HotspotOnBoot",
-            "MapboxStyle"
+            "MapboxStyle",
+            "ShowNavMap",
+            "ShowNavMapWidth"
           ]
         },
         {
